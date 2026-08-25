@@ -60,7 +60,7 @@ jobs:
           - platform: msvc-x64
             arch: x64
             toolset: '14.29'
-            os: windows-2025
+            os: windows-2022
             pack: 1
             upload: 0
             pack_type: RelWithDebInfo
