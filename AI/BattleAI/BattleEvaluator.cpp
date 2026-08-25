@@ -512,16 +512,39 @@ bool BattleEvaluator::canCastSpell()
 
 bool BattleEvaluator::attemptCastingSpell(const CStack * activeStack)
 {
-	auto hero = cb->getBattle(battleID)->battleGetMyHero();
+	auto battleCallback = cb->getBattle(battleID);
+	auto hero = battleCallback->battleGetMyHero();
 	if(!hero)
 		return false;
+
+	int minSpellLevel = battleCallback->battleMinSpellLevel(activeStack->unitSide());
+	int maxSpellLevel = battleCallback->battleMaxSpellLevel(activeStack->unitSide());
+
+	// Opening spell effects are synchronized on stacks before their HERO
+	// propagator reaches the client-side hero bonus tree. Recover the limits
+	// from those stacks so BattleAI does not retry a server-rejected spell.
+	for(const auto * unit : battleCallback->battleGetUnitsIf([&](const battle::Unit * unit)
+	{
+		return unit->unitSide() == activeStack->unitSide();
+	}))
+	{
+		auto below = unit->getBonusesOfType(BonusType::BLOCK_MAGIC_BELOW);
+		if(!below->empty())
+			minSpellLevel = std::max<int>(minSpellLevel, below->totalValue());
+
+		auto above = unit->getBonusesOfType(BonusType::BLOCK_MAGIC_ABOVE);
+		if(!above->empty())
+			maxSpellLevel = std::min<int>(maxSpellLevel, above->totalValue());
+	}
 
 	LOGL("Casting spells sounds like fun. Let's see...");
 	//Get all spells we can cast
 	std::vector<const CSpell*> possibleSpells;
 
 	for (auto const & s : LIBRARY->spellh->objects)
-		if (s->canBeCast(cb->getBattle(battleID).get(), spells::Mode::HERO, hero))
+		if (s->getLevel() >= minSpellLevel
+			&& s->getLevel() <= maxSpellLevel
+			&& s->canBeCast(battleCallback.get(), spells::Mode::HERO, hero))
 			possibleSpells.push_back(s.get());
 
 	LOGFL("I can cast %d spells.", possibleSpells.size());
