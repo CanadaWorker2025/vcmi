@@ -1,0 +1,97 @@
+name: Build MSVC x64 Only
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-msvc-x64:
+    name: Build (msvc-x64 only)
+    runs-on: windows-2022
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install Conan dependencies
+        run: |
+          pipx install conan
+          source '${{ github.workspace }}/CI/install_conan_dependencies.sh' dependencies-windows-x64
+
+      - name: Setup MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          toolset: '14.29'
+
+      - name: Setup compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          variant: sccache
+          key: msvc-x64-branch-${{ github.ref_name }}
+          restore-keys: |
+            msvc-x64-branch-${{ github.ref_name }}
+            msvc-x64-
+          create-symlink: false
+          max-size: '5G'
+          verbose: 2
+          job-summary: ""
+
+      - name: Install Conan profile
+        run: |
+          conan profile detect
+          outFolder=conan-generated
+          conan install . \
+            --output-folder="$outFolder" \
+            --build=never \
+            --profile=dependencies/conan_profiles/msvc-x64 \
+            --conf="tools.cmake.cmaketoolchain:generator=Ninja" \
+            -s "&:build_type=RelWithDebInfo" \
+            -c tools.env.virtualenv:powershell=pwsh \
+            -o "&:target_pre_windows10=True"
+          echo CONANRUN_PWSH_SCRIPT="$outFolder/conanrun.ps1" >> "$GITHUB_ENV"
+
+      - name: Build number
+        run: |
+          source '${{ github.workspace }}/CI/get_package_name.sh'
+          VCMI_PACKAGE_FILE_NAME+="-x64"
+          echo VCMI_PACKAGE_FILE_NAME="$VCMI_PACKAGE_FILE_NAME" >> "$GITHUB_ENV"
+          echo VCMI_PACKAGE_BUILD="$VCMI_PACKAGE_BUILD" >> "$GITHUB_ENV"
+          echo VCMI_PACKAGE_NAME_SUFFIX="$VCMI_PACKAGE_NAME_SUFFIX" >> "$GITHUB_ENV"
+          echo VCMI_PACKAGE_GOLDMASTER="$VCMI_PACKAGE_GOLDMASTER" >> "$GITHUB_ENV"
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          & $env:CONANRUN_PWSH_SCRIPT
+          cmake --preset windows-msvc-ninja-release
+
+      - name: Build
+        shell: pwsh
+        run: |
+          & $env:CONANRUN_PWSH_SCRIPT
+          cmake --build --preset windows-msvc-ninja-release
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          & $env:CONANRUN_PWSH_SCRIPT
+          Set-Location '${{ github.workspace }}/out/build/windows-msvc-ninja-release'
+          cpack -C RelWithDebInfo
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.VCMI_PACKAGE_FILE_NAME }}-msvc-x64
+          compression-level: 9
+          path: ${{ github.workspace }}/out/build/windows-msvc-ninja-release/${{ env.VCMI_PACKAGE_FILE_NAME }}.zip
+          if-no-files-found: error
