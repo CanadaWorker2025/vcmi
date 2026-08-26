@@ -131,6 +131,13 @@ void CBattleAI::activeStack(const BattleID & battleID, const CStack * stack )
 {
 	LOG_TRACE_PARAMS(logAi, "stack: %s", stack->nodeName());
 
+	const bool resumeAfterSpellcast = unitPendingAfterSpellcast == stack->unitId();
+	if(resumeAfterSpellcast)
+	{
+		unitPendingAfterSpellcast.reset();
+		logAi->trace("Skipping spell evaluation after stack reactivation");
+	}
+
 	auto timeElapsed = [](std::chrono::time_point<std::chrono::high_resolution_clock> start) -> uint64_t
 	{
 		auto end = std::chrono::high_resolution_clock::now();
@@ -164,12 +171,15 @@ void CBattleAI::activeStack(const BattleID & battleID, const CStack * stack )
 
 	result = evaluator.selectStackAction(stack);
 
-	if(autobattlePreferences.enableSpellsUsage && evaluator.canCastSpell())
+	if(!resumeAfterSpellcast && autobattlePreferences.enableSpellsUsage && evaluator.canCastSpell())
 	{
 		auto spelCasted = evaluator.attemptCastingSpell(stack);
 
 		if(spelCasted)
+		{
+			unitPendingAfterSpellcast = stack->unitId();
 			return;
+		}
 	}
 
 	logAi->trace("Spellcast attempt completed in %lld", timeElapsed(start));
@@ -246,6 +256,7 @@ void CBattleAI::battleStart(const BattleID & battleID, const CCreatureSet *army1
 {
 	LOG_TRACE(logAi);
 	side = Side;
+	unitPendingAfterSpellcast.reset();
 }
 
 void CBattleAI::print(const std::string &text) const

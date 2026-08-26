@@ -61,6 +61,7 @@ class CBattleAI : public CBattleGameInterface
 	//Previous setting of cb
 	bool wasWaitingForRealize;
 	int movesSkippedByDefense;
+	std::optional<uint32_t> unitPendingAfterSpellcast;
 
 public:
 	CBattleAI();
