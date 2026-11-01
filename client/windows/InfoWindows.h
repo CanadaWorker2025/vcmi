@@ -105,6 +105,14 @@ public:
 	void mouseDraggedPopup(const Point & cursorPosition, const Point & lastUpdateDistance) override;
 };
 
+class MapObjectDetailsPopup : public AdventureMapPopup
+{
+	std::shared_ptr<CFilledTexture> texture;
+	std::shared_ptr<CTextBox> details;
+public:
+	MapObjectDetailsPopup(const Point & position, const std::string & text);
+};
+
 /// popup on adventure map for town\hero and other objects with customized popup content
 class CInfoBoxPopup : public AdventureMapPopup
 {

@@ -55,6 +55,10 @@ AdventureOptionsTab::AdventureOptionsTab()
 #endif
 
 	const JsonNode config(JsonPath::builtin("config/widgets/settings/adventureOptionsTab.json"));
+	addCallback("detailedObjectPreviewChanged", [](bool value)
+	{
+		setBoolSetting("adventure", "detailedObjectPreview", value);
+	});
 	addCallback("playerHeroSpeedChanged", [this](int value)
 	{
 		auto targetLabel = widget<CLabel>("heroSpeedValueLabel");
@@ -169,6 +173,11 @@ AdventureOptionsTab::AdventureOptionsTab()
 		ENGINE->windows().createAndPushWindow<KeyBindingsWindow>();
 	});
 	build(config);
+	if(auto checkbox = widget<CToggleButton>("detailedObjectPreviewCheckbox"))
+	{
+		const auto & enabled = settings["adventure"]["detailedObjectPreview"];
+		checkbox->setSelected(enabled.isNull() || enabled.Bool());
+	}
 
 	std::shared_ptr<CToggleGroup> playerHeroSpeedToggle = widget<CToggleGroup>("heroMovementSpeedPicker");
 	playerHeroSpeedToggle->setSelected(static_cast<int>(settings["adventure"]["heroMoveTime"].Float()));

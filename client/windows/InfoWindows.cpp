@@ -35,9 +35,201 @@
 #include "../../lib/mapObjects/CGCreature.h"
 #include "../../lib/mapObjects/CGHeroInstance.h"
 #include "../../lib/mapObjects/CGTownInstance.h"
+#include "../../lib/mapObjects/CGMarket.h"
+#include "../../lib/mapObjects/army/CStackInstance.h"
 #include "../../lib/mapObjects/CQuest.h"
 #include "../../lib/mapObjects/MiscObjects.h"
 #include "../../lib/ConditionalWait.h"
+#include "../../lib/GameLibrary.h"
+#include "../../lib/StartInfo.h"
+#include "../../lib/texts/CGeneralTextHandler.h"
+#include "../../lib/entities/faction/CTown.h"
+
+namespace
+{
+std::string previewLabel(const std::string & key)
+{
+	return LIBRARY->generaltexth->translate("vcmi.objectPreview." + key);
+}
+
+void appendPreviewComponents(std::string & text, const std::vector<Component> & components)
+{
+	for(const auto & component : components)
+	{
+		if(component.type == ComponentType::NONE)
+			continue;
+		CComponent display(component, CComponent::tiny);
+		auto line = display.getSubtitle();
+		if(component.type == ComponentType::RESOURCE)
+			line += " " + LIBRARY->generaltexth->restypes[component.subType.getNum()];
+		else if(component.type == ComponentType::EXPERIENCE)
+			line += " " + previewLabel("experience");
+		else if(component.type == ComponentType::MORALE || component.type == ComponentType::LUCK)
+			line = previewLabel(component.type == ComponentType::MORALE ? "morale" : "luck") + " " + std::to_string(component.value.value_or(0));
+		boost::replace_all(line, "\n", " ");
+		if(!line.empty())
+			text += "  " + line + "\n";
+	}
+}
+
+void appendPreviewLimiter(std::string & text, const Rewardable::Limiter & limiter, int depth = 0)
+{
+	if(depth > 16)
+	{
+		text += previewLabel("additionalConditions") + "\n";
+		return;
+	}
+	std::vector<Component> components;
+	// Level is not experience: the standard limiter component helper conflates them.
+	auto displayLimiter = limiter;
+	displayLimiter.heroLevel = 0;
+	displayLimiter.loadComponents(components, nullptr);
+	appendPreviewComponents(text, components);
+	if(limiter.heroLevel)
+		text += "  " + previewLabel("level") + " " + std::to_string(limiter.heroLevel) + "\n";
+	if(limiter.daysPassed)
+		text += "  " + previewLabel("daysPassed") + " " + std::to_string(limiter.daysPassed) + "\n";
+	if(limiter.dayOfWeek)
+		text += "  " + previewLabel("dayOfWeek") + " " + std::to_string(limiter.dayOfWeek) + "\n";
+	if(limiter.movePoints || limiter.movePercentage || limiter.manaPercentage || limiter.canLearnSkills
+		|| limiter.commanderAlive || limiter.hasExtraCreatures || !limiter.heroClasses.empty()
+		|| !limiter.canLearnSpells.empty() || !limiter.canReceiveCreatures.empty()
+		|| !limiter.availableSlots.empty() || !limiter.scrolls.empty())
+		text += "  " + previewLabel("additionalConditions") + "\n";
+	for(const auto & group : {std::make_pair("allOf", &limiter.allOf),
+		std::make_pair("anyOf", &limiter.anyOf), std::make_pair("noneOf", &limiter.noneOf)})
+	{
+		if(group.second->empty())
+			continue;
+		text += "  " + previewLabel(group.first) + "\n";
+		for(const auto & child : *group.second)
+			if(child)
+				appendPreviewLimiter(text, *child, depth + 1);
+	}
+}
+
+bool makeObjectPreview(const CGObjectInstance * object, std::string & text)
+{
+	const auto & enabled = settings["adventure"]["detailedObjectPreview"];
+	if((!enabled.isNull() && !enabled.Bool()) || !object || !GAME->interface()->cb->isVisible(object))
+		return false;
+	const auto * start = GAME->interface()->cb->getStartInfo();
+	if(!start || std::count_if(start->playerInfos.begin(), start->playerInfos.end(),
+		[](const auto & entry) { return entry.second.isControlledByHuman(); }) != 1)
+		return false;
+	text = "{" + object->getObjectName() + "}\n\n";
+	if(const auto * town = dynamic_cast<const CGTownInstance *>(object))
+	{
+		text += previewLabel("guildSpells") + "\n";
+		for(size_t i = 0; i < town->spells.size() && i < town->getTown()->mageLevel && i < 5; ++i)
+		{
+			const auto count = std::min(town->spells[i].size(), static_cast<size_t>(std::max(0, town->spellsAtLevel(i + 1, false))));
+			if(count == 0)
+				continue;
+			text += "\n{" + previewLabel("level") + " " + std::to_string(i + 1) + " - "
+				+ previewLabel(town->mageGuildLevel() >= i + 1 ? "built" : "notBuilt") + "}\n";
+			std::vector<Component> spells;
+			for(size_t j = 0; j < count; ++j)
+				spells.emplace_back(ComponentType::SPELL, town->spells[i][j]);
+			appendPreviewComponents(text, spells);
+		}
+		return true;
+	}
+	if(const auto * university = dynamic_cast<const CGUniversity *>(object))
+	{
+		text += previewLabel("skills") + "\n";
+		std::vector<Component> skills;
+		for(const auto & skill : university->skills)
+			skills.emplace_back(ComponentType::SEC_SKILL, skill.as<SecondarySkill>());
+		appendPreviewComponents(text, skills);
+		return true;
+	}
+	const auto * rewardable = dynamic_cast<const CRewardableObject *>(object);
+	if(!rewardable)
+		return false;
+	const auto * hero = GAME->interface()->localState->getCurrentHero();
+	if(rewardable->configuration.visitMode != Rewardable::VISIT_UNLIMITED)
+		text += previewLabel((hero ? rewardable->wasVisited(hero) : rewardable->wasVisited(GAME->interface()->playerID))
+			? "visited" : "notVisited") + "\n";
+	if(const auto * seer = dynamic_cast<const CGSeerHut *>(object))
+	{
+		const auto & quest = seer->getQuest();
+		text += "\n{" + previewLabel("requirements") + "}\n";
+		appendPreviewLimiter(text, quest.mission);
+		if(quest.lastDay >= 0)
+			text += previewLabel("deadline") + " " + std::to_string(quest.lastDay + 1) + "\n";
+		if(quest.killTarget.hasValue())
+		{
+			text += previewLabel("defeatTarget") + " " + quest.heroName + "\n";
+			if(quest.stackToKill.hasValue())
+				appendPreviewComponents(text, {Component(ComponentType::CREATURE, quest.stackToKill)});
+		}
+		if(quest.isCompleted)
+			text += previewLabel("completed") + "\n";
+	}
+	std::vector<Component> guards;
+	for(const auto & slot : rewardable->Slots())
+		if(slot.second)
+			guards.emplace_back(ComponentType::CREATURE, slot.second->getCreatureID(), slot.second->getCount());
+	if(!guards.empty())
+	{
+		text += "\n{" + previewLabel("guards") + "}\n";
+		appendPreviewComponents(text, guards);
+	}
+	const auto & config = rewardable->configuration;
+	text += "\n" + previewLabel(Rewardable::SelectModeString.at(config.selectMode).data()) + "\n";
+	int index = 0;
+	for(const auto & info : config.info)
+	{
+		if(info.visitType != Rewardable::EEventType::EVENT_FIRST_VISIT)
+			continue;
+		text += "\n{" + previewLabel("reward") + " " + std::to_string(++index) + "}\n";
+		text += previewLabel("requirements") + ":\n";
+		appendPreviewLimiter(text, info.limiter);
+		text += previewLabel("contents") + ":\n";
+		std::vector<Component> components;
+		// Separate removals: the standard component list includes both granted and taken items.
+		auto displayedReward = info.reward;
+		displayedReward.extraComponents.clear();
+		displayedReward.takenArtifacts.clear();
+		displayedReward.takenArtifactSlots.clear();
+		displayedReward.takenScrolls.clear();
+		displayedReward.loadComponents(components, nullptr);
+		appendPreviewComponents(text, components);
+		std::vector<Component> removals;
+		for(const auto & artifact : info.reward.takenArtifacts)
+			removals.emplace_back(ComponentType::ARTIFACT, artifact);
+		for(const auto & scroll : info.reward.takenScrolls)
+			removals.emplace_back(ComponentType::SPELL_SCROLL, scroll);
+		for(const auto & creature : info.reward.takenCreatures)
+			removals.emplace_back(ComponentType::CREATURE, creature.getId(), creature.getCount());
+		if(!removals.empty())
+		{
+			text += previewLabel("removed") + ":\n";
+			appendPreviewComponents(text, removals);
+		}
+		if(info.reward.movePoints || info.reward.movePercentage >= 0 || info.reward.manaPercentage >= 0
+			|| !info.reward.heroBonuses.empty() || !info.reward.playerBonuses.empty()
+			|| !info.reward.commanderBonuses.empty() || !info.reward.creaturesChange.empty()
+			|| !info.reward.takenCreatures.empty() || !info.reward.takenArtifactSlots.empty()
+			|| info.reward.spellCast.first.hasValue() || info.reward.revealTiles)
+			text += previewLabel("additionalEffects") + "\n";
+		if(!info.reward.guards.empty())
+		{
+			text += previewLabel("guards") + ":\n";
+			std::vector<Component> rewardGuards;
+			for(const auto & guard : info.reward.guards)
+				rewardGuards.emplace_back(ComponentType::CREATURE, guard.getId(), guard.getCount());
+			appendPreviewComponents(text, rewardGuards);
+		}
+	}
+	if(index == 0)
+		text += previewLabel("noReward") + "\n";
+	if(config.resetParameters.period)
+		text += "\n" + previewLabel("resetDays") + " " + std::to_string(config.resetParameters.period) + "\n";
+	return true;
+}
+}
 
 CSelWindow::CSelWindow( const std::string & Text, PlayerColor player, int charperline, const std::vector<std::shared_ptr<CSelectableComponent>> & comps, const std::vector<std::pair<AnimationPath, CFunctionList<void()>>> & Buttons, QueryID askID)
 {
@@ -216,6 +408,12 @@ void CRClickPopup::createAndPush(const std::string & txt, const std::shared_ptr<
 
 void CRClickPopup::createAndPush(const CGObjectInstance * obj, const Point & p, ETextAlignment alignment)
 {
+	std::string details;
+	if(makeObjectPreview(obj, details))
+	{
+		ENGINE->windows().createAndPushWindow<MapObjectDetailsPopup>(p, details);
+		return;
+	}
 	auto iWin = createCustomInfoWindow(p, obj); //try get custom infowindow for this obj
 	if(iWin)
 	{
@@ -285,6 +483,19 @@ void AdventureMapPopup::mouseDraggedPopup(const Point & cursorPosition, const Po
 	
 	if(dragDistance.length() > 16)
 		close();
+}
+
+MapObjectDetailsPopup::MapObjectDetailsPopup(const Point & position, const std::string & text)
+	: AdventureMapPopup(BORDERED | RCLICK_POPUP)
+{
+	OBJECT_CONSTRUCTION;
+	const auto screen = ENGINE->screenDimensions();
+	pos.w = std::min(520, screen.x - 40);
+	pos.h = std::min(520, screen.y - 60);
+	texture = std::make_shared<CFilledTexture>(ImagePath::builtin("DiBoxBck"), Rect(0, 0, pos.w, pos.h));
+	details = std::make_shared<CTextBox>(text, Rect(14, 12, pos.w - 28, pos.h - 24), 0, FONT_SMALL, ETextAlignment::TOPLEFT, Colors::WHITE);
+	center(position);
+	fitToScreen(10);
 }
 
 

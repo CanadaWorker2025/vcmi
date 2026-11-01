@@ -7,6 +7,24 @@
 	"items":
 	[
 		{
+			"type": "verticalLayout",
+			"customType": "checkbox",
+			"position": {"x": 190, "y": 387},
+			"items": [
+				{
+					"name": "detailedObjectPreviewCheckbox",
+					"help": "vcmi.objectPreview.setting",
+					"callback": "detailedObjectPreviewChanged"
+				}
+			]
+		},
+		{
+			"type": "verticalLayout",
+			"customType": "labelDescription",
+			"position": {"x": 225, "y": 389},
+			"items": [{"text": "vcmi.objectPreview.setting.hover"}]
+		},
+		{
 			"name": "lineLabelsEnd",
 			"type": "horizontalLine",
 			"rect": { "x" : 5, "y" : 229, "w": 365, "h": 3}
