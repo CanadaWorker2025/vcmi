@@ -46,7 +46,8 @@ enum class EWorldViewIcon
 	RES_GOLD = 18,
 
 	ICONS_PER_PLAYER = 19,
-	ICONS_TOTAL = 19 * 9 // 8 players + neutral set at the end
+	ICONS_TOTAL = 19 * 9, // 8 players + neutral set at the end
+	STAT_BOOST = ICONS_TOTAL
 };
 
 struct MapRendererContextState

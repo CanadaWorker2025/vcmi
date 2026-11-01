@@ -134,6 +134,7 @@ public:
 class MapRendererWorldViewContext : public MapRendererBaseContext
 {
 protected:
+	std::set<MapObjectID> statBoostObjects;
 	size_t selectOverlayImageForObject(const ObjectPosInfo & object) const;
 
 public:

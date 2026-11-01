@@ -19,6 +19,9 @@
 #include "../GameInstance.h"
 
 #include "../../lib/Point.h"
+#include "../../lib/GameLibrary.h"
+#include "../../lib/modding/IdentifierStorage.h"
+#include "../../lib/modding/ModScope.h"
 #include "../../lib/battle/CPlayerBattleCallback.h"
 #include "../../lib/battle/IBattleState.h"
 #include "../../lib/callback/CCallback.h"
@@ -482,6 +485,9 @@ size_t MapRendererAdventureMovingContext::objectImageIndex(ObjectInstanceID obje
 
 size_t MapRendererWorldViewContext::selectOverlayImageForObject(const ObjectPosInfo & object) const
 {
+	if(statBoostObjects.count(object.id))
+		return static_cast<size_t>(EWorldViewIcon::STAT_BOOST);
+
 	size_t ownerIndex = PlayerColor::PLAYER_LIMIT.getNum() * static_cast<size_t>(EWorldViewIcon::ICONS_PER_PLAYER);
 
 	if(object.owner.isValidPlayer())
@@ -512,6 +518,17 @@ size_t MapRendererWorldViewContext::selectOverlayImageForObject(const ObjectPosI
 MapRendererWorldViewContext::MapRendererWorldViewContext(const MapRendererContextState & viewState)
 	: MapRendererBaseContext(viewState)
 {
+	// Optional mod objects must not prevent the base game from loading.
+	for(const auto * identifier : {
+		"core:mercenaryCamp", "core:marlettoTower", "core:starAxis",
+		"core:gardenOfRevelation", "core:arena", "core:libraryOfEnlightenment",
+		"core:schoolOfWar", "core:schoolOfMagic", "core:scholar",
+		"hota.mapobjects:colosseumOfTheMagi", "fairy:divinationHut"})
+	{
+		auto id = LIBRARY->identifiers()->getIdentifier(ModScope::scopeGame(), "object", identifier, true);
+		if(id)
+			statBoostObjects.emplace(*id);
+	}
 }
 
 bool MapRendererWorldViewContext::showImageOverlay() const

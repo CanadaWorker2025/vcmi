@@ -14,6 +14,7 @@
 #include "IMapRendererContext.h"
 #include "MapRenderer.h"
 #include "MapViewModel.h"
+#include "MapRendererContextState.h"
 
 #include "../render/CAnimation.h"
 #include "../render/Canvas.h"
@@ -26,6 +27,7 @@
 #include "../widgets/TextControls.h"
 
 #include "../../lib/int3.h"
+#include "../../lib/filesystem/Filesystem.h"
 
 MapViewCache::~MapViewCache() = default;
 
@@ -40,6 +42,8 @@ MapViewCache::MapViewCache(const std::shared_ptr<MapViewModel> & model)
 	, terrainTransition(new Canvas(model->getPixelsVisibleDimensions(), CanvasScalingPolicy::AUTO))
 {
 	Point visibleSize = model->getTilesVisibleDimensions();
+	if(CResourceHandler::get()->existsResource(ImagePath::builtin("SPRITES/mapView/statBoost")))
+		statBoostIcon = ENGINE->renderHandler().loadImage(ImagePath::builtin("mapView/statBoost"), EImageBlitMode::COLORKEY);
 	terrainChecksum.resize(boost::extents[visibleSize.x][visibleSize.y]);
 	tilesUpToDate.resize(boost::extents[visibleSize.x][visibleSize.y]);
 }
@@ -52,6 +56,13 @@ Canvas MapViewCache::getTile(const int3 & coordinates)
 std::shared_ptr<IImage> MapViewCache::getOverlayImageForTile(const std::shared_ptr<IMapRendererContext> & context, const int3 & coordinates)
 {
 	size_t imageIndex = context->overlayImageIndex(coordinates);
+	if(imageIndex == static_cast<size_t>(EWorldViewIcon::STAT_BOOST))
+	{
+		if(statBoostIcon)
+			return statBoostIcon;
+		imageIndex = PlayerColor::PLAYER_LIMIT.getNum() * static_cast<size_t>(EWorldViewIcon::ICONS_PER_PLAYER)
+			+ static_cast<size_t>(EWorldViewIcon::ARTIFACT);
+	}
 
 	if(imageIndex < iconsStorage->size())
 		return iconsStorage->getImage(imageIndex);
