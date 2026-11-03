@@ -107,10 +107,14 @@ public:
 
 class MapObjectDetailsPopup : public AdventureMapPopup
 {
+	std::shared_ptr<WindowBase> nativePopup;
+	std::string previewText;
 	std::shared_ptr<CFilledTexture> texture;
 	std::shared_ptr<CTextBox> details;
+	void rebuildLayout(const Point & position);
 public:
-	MapObjectDetailsPopup(const Point & position, const std::string & text);
+	MapObjectDetailsPopup(const Point & position, const std::string & text, const std::shared_ptr<WindowBase> & native);
+	void onScreenResize() override;
 };
 
 /// popup on adventure map for town\hero and other objects with customized popup content
