@@ -1,4 +1,5 @@
 {
+	"vcmi.scholarExperience.learned": "%s received instruction from %s and gained %d experience.",
 	"vcmi.objectPreview.unknownVisitState": "Select a hero to determine this hero-specific visit state.",
 	"vcmi.objectPreview.supplement": "Additional details",
 	"vcmi.objectPreview.configuredOptions": "Configured event options, not a guarantee of a claim. Visit state, quest state and conditions still apply.",

@@ -17,6 +17,7 @@
 #include "battles/BattleProcessor.h"
 #include "processors/HeroPoolProcessor.h"
 #include "processors/NewTurnProcessor.h"
+#include "processors/ScholarExperiencePolicy.h"
 #include "processors/PlayerMessageProcessor.h"
 #include "processors/TurnOrderProcessor.h"
 #include "queries/QueriesProcessor.h"
@@ -348,6 +349,11 @@ void CGameHandler::giveStackExperience(const CArmedInstance * army, TExpType val
 
 void CGameHandler::giveExperience(const CGHeroInstance * hero, TExpType amountToGain)
 {
+	giveExperience(hero, amountToGain, true);
+}
+
+void CGameHandler::giveExperience(const CGHeroInstance * hero, TExpType amountToGain, bool includeCommander)
+{
 	TExpType maxExp = LIBRARY->heroh->reqExp(LIBRARY->heroh->maxSupportedLevel());
 	TExpType currHeroExp = hero->exp;
 
@@ -381,7 +387,7 @@ void CGameHandler::giveExperience(const CGHeroInstance * hero, TExpType amountTo
 	sendAndApply(she);
 
 	//hero may level up
-	if (hero->getCommander() && hero->getCommander()->alive)
+	if (includeCommander && hero->getCommander() && hero->getCommander()->alive)
 	{
 		TExpType canGainCommanderExp = 0;
 		TExpType currCommanderExp = hero->getCommander()->getTotalExperience();
@@ -1311,10 +1317,14 @@ void CGameHandler::heroVisitCastle(const CGTownInstance * obj, const CGHeroInsta
 		vc.startVisit = true;
 		sendAndApply(vc);
 	}
+	const auto scholar = obj->getVisitingHero() && obj->getGarrisonHero()
+		? queueScholarExperience(obj->getVisitingHero()->id, obj->getGarrisonHero()->id) : nullptr;
 	visitCastleObjects(obj, hero);
 
 	if (obj->getVisitingHero() && obj->getGarrisonHero())
 		useScholarSkill(obj->getVisitingHero()->id, obj->getGarrisonHero()->id);
+	if(scholar)
+		queries->popIfTop(scholar); // Otherwise building/level-up queries expose it later.
 	checkVictoryLossConditionsForPlayer(hero->tempOwner); //transported artifact?
 }
 
@@ -1534,6 +1544,50 @@ void CGameHandler::useScholarSkill(ObjectInstanceID fromHero, ObjectInstanceID t
 	}
 }
 
+std::shared_ptr<CScholarExperienceQuery> CGameHandler::queueScholarExperience(ObjectInstanceID hero1, ObjectInstanceID hero2)
+{
+	const auto * first = gameInfo().getHero(hero1);
+	const auto * second = gameInfo().getHero(hero2);
+	if(!first || !second || hero1 == hero2 || first->ID != Obj::HERO || second->ID != Obj::HERO
+		|| !first->getOwner().isValidPlayer() || first->getOwner() != second->getOwner())
+		return nullptr;
+	auto query = std::make_shared<CScholarExperienceQuery>(this, hero1, hero2, first->getOwner());
+	queries->addQuery(query);
+	return query;
+}
+
+void CGameHandler::useScholarExperience(ObjectInstanceID hero1, ObjectInstanceID hero2)
+{
+	const auto * first = gameInfo().getHero(hero1);
+	const auto * second = gameInfo().getHero(hero2);
+	if(!first || !second || hero1 == hero2 || first->ID != Obj::HERO || second->ID != Obj::HERO
+		|| !first->getOwner().isValidPlayer() || first->getOwner() != second->getOwner())
+		return;
+	if(gameInfo().getPlayerStatus(first->getOwner()) != EPlayerStatus::INGAME)
+		return;
+
+	TExpType cap = LIBRARY->heroh->reqExp(LIBRARY->heroh->maxSupportedLevel());
+	if(gameState().getMap().levelLimit != 0)
+		cap = std::min(cap, LIBRARY->heroh->reqExp(gameState().getMap().levelLimit));
+	const auto transfer = ScholarExperiencePolicy::plan(
+		{first->level, first->getSecSkillLevel(SecondarySkill::SCHOLAR), first->exp},
+		{second->level, second->getSecSkillLevel(SecondarySkill::SCHOLAR), second->exp}, cap);
+	if(!transfer)
+		return;
+	const auto * teacher = transfer->teacher == 0 ? first : second;
+	const auto * student = transfer->student == 0 ? first : second;
+	InfoWindow info;
+	info.type = EInfoWindowMode::AUTO;
+	info.player = student->getOwner();
+	info.text.appendTextID("vcmi.scholarExperience.learned");
+	info.text.replaceRawString(student->getNameTranslated());
+	info.text.replaceRawString(teacher->getNameTranslated());
+	info.text.replaceNumber(transfer->amount);
+	sendAndApply(info);
+	// No Learning/experience aura multiplier, and no extra commander XP duplication.
+	giveExperience(student, transfer->amount, false);
+}
+
 void CGameHandler::heroExchange(ObjectInstanceID hero1, ObjectInstanceID hero2)
 {
 	const auto * h1 = gameInfo().getHero(hero1);
@@ -1541,6 +1595,7 @@ void CGameHandler::heroExchange(ObjectInstanceID hero1, ObjectInstanceID hero2)
 
 	if (gameInfo().getPlayerRelations(h1->getOwner(), h2->getOwner()) != PlayerRelations::ENEMIES)
 	{
+		queueScholarExperience(hero1, hero2); // Barrier must be below the exchange dialog.
 		auto exchange = std::make_shared<CGarrisonDialogQuery>(this, h1, h2);
 		ExchangeDialog hex;
 		hex.queryID = exchange->queryID;
@@ -2628,6 +2683,8 @@ bool CGameHandler::garrisonSwap(ObjectInstanceID tid)
 		intown.garrison = town->getVisitingHero()->id;
 		intown.visiting =  town->getGarrisonHero()->id;
 		sendAndApply(intown);
+		if(const auto scholar = queueScholarExperience(intown.visiting, intown.garrison))
+			queries->popIfTop(scholar);
 		return true;
 	}
 	else

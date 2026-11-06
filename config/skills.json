@@ -559,16 +559,19 @@
 			}
 		},
 		"basic" : {
+			"description": "{Basic Scholar}\n\nExchanges level 1-2 spells under the normal Scholar rules. When meeting a lower-level hero of the same player, raises their total experience to 20% of the teacher's total experience if it is below that target. The teacher loses no experience. Experience instruction does not require spellbooks or Wisdom, receives no extra XP multiplier, and respects the map level cap.",
 			"effects" : {
 				"main" : { "val" : 2 }
 			}
 		},
 		"advanced" : {
+			"description": "{Advanced Scholar}\n\nExchanges level 1-3 spells under the normal Scholar rules. When meeting a lower-level hero of the same player, raises their total experience to 40% of the teacher's total experience if it is below that target. The teacher loses no experience. Experience instruction does not require spellbooks or Wisdom, receives no extra XP multiplier, and respects the map level cap.",
 			"effects" : {
 				"main" : { "val" : 3 }
 			}
 		},
 		"expert" : {
+			"description": "{Expert Scholar}\n\nExchanges level 1-4 spells under the normal Scholar rules. When meeting a lower-level hero of the same player, raises their total experience to 80% of the teacher's total experience if it is below that target. The teacher loses no experience. Experience instruction does not require spellbooks or Wisdom, receives no extra XP multiplier, and respects the map level cap.",
 			"effects" : {
 				"main" : { "val" : 4 }
 			}

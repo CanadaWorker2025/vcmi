@@ -49,6 +49,21 @@ public:
 	void onRemoval(PlayerColor color) override;
 };
 
+// A non-interactive barrier below exchange/building queries; runs after they finish.
+class CScholarExperienceQuery final : public CQuery
+{
+	ObjectInstanceID firstHero;
+	ObjectInstanceID secondHero;
+	bool completed = false;
+	QueryPtr completedChild;
+public:
+	CScholarExperienceQuery(CGameHandler * owner, ObjectInstanceID first, ObjectInstanceID second, PlayerColor player);
+	bool blocksPack(const CPackForServer * pack) const override;
+	void onRemoval(PlayerColor color) override;
+	void onExposure(QueryPtr topQuery) override;
+	void notifyObjectAboutRemoval(const CGObjectInstance * visitedObject, const CGHeroInstance * visitingHero) const override;
+};
+
 class CGarrisonDialogQuery : public CDialogQuery //used also for hero exchange dialogs
 {
 public:

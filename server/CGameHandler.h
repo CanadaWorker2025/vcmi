@@ -58,6 +58,7 @@ class TurnTimerHandler;
 class QueriesProcessor;
 class CObjectVisitQuery;
 class NewTurnProcessor;
+class CScholarExperienceQuery;
 class IGameServer;
 
 class CGameHandler : public Environment, public IGameEventCallback
@@ -192,6 +193,9 @@ public:
 
 	//////////////////////////////////////////////////////////////////////////
 	void useScholarSkill(ObjectInstanceID hero1, ObjectInstanceID hero2);
+	std::shared_ptr<CScholarExperienceQuery> queueScholarExperience(ObjectInstanceID hero1, ObjectInstanceID hero2);
+	void useScholarExperience(ObjectInstanceID hero1, ObjectInstanceID hero2);
+	void giveExperience(const CGHeroInstance * hero, TExpType amountToGain, bool includeCommander);
 	void setPortalDwelling(const CGTownInstance * town, bool forced, bool clear);
 	void visitObjectOnTile(const TerrainTile &t, const CGHeroInstance * h);
 	bool teleportHero(ObjectInstanceID hid, ObjectInstanceID dstid, ui8 source, PlayerColor asker = PlayerColor::NEUTRAL);

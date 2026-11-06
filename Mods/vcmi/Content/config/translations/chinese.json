@@ -1,4 +1,5 @@
 {
+	"vcmi.scholarExperience.learned": "%s 接受 %s 的学术指导，获得 %d 点经验。",
 	"vcmi.objectPreview.unknownVisitState": "此访问状态按英雄判断，请先选中英雄；当前无法确定。",
 	"vcmi.objectPreview.supplement": "补充详情",
 	"vcmi.objectPreview.configuredOptions": "以下为配置中的事件选项，不等于当前可领取奖励；仍受访问状态、任务进度和条件限制。",

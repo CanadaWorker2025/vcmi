@@ -61,6 +61,40 @@ void CGarrisonDialogQuery::notifyObjectAboutRemoval(const CGObjectInstance * vis
 	visitedObject->garrisonDialogClosed(*gh, visitingHero);
 }
 
+CScholarExperienceQuery::CScholarExperienceQuery(CGameHandler * owner, ObjectInstanceID first, ObjectInstanceID second, PlayerColor player)
+	: CQuery(owner), firstHero(first), secondHero(second)
+{
+	addPlayer(player); // One entry, even when both heroes have the same owner.
+}
+
+bool CScholarExperienceQuery::blocksPack(const CPackForServer *) const
+{
+	return true;
+}
+
+void CScholarExperienceQuery::onRemoval(PlayerColor color)
+{
+	if(completed)
+		return;
+	completed = true;
+	const auto * first = gh->gameInfo().getHero(firstHero);
+	if(!first || first->getOwner() != color)
+		return; // A delayed town event must not train heroes transferred to another player.
+	gh->useScholarExperience(firstHero, secondHero);
+}
+
+void CScholarExperienceQuery::onExposure(QueryPtr topQuery)
+{
+	completedChild = topQuery;
+	CQuery::onExposure(topQuery);
+}
+
+void CScholarExperienceQuery::notifyObjectAboutRemoval(const CGObjectInstance * visitedObject, const CGHeroInstance * visitingHero) const
+{
+	if(completedChild)
+		completedChild->notifyObjectAboutRemoval(visitedObject, visitingHero);
+}
+
 CGarrisonDialogQuery::CGarrisonDialogQuery(CGameHandler * owner, const CArmedInstance * up, const CArmedInstance * down):
 	CDialogQuery(owner)
 {
