@@ -42,6 +42,7 @@ set(vcmiservercommon_HEADERS
 
 		processors/HeroPoolProcessor.h
 		processors/NewTurnProcessor.h
+		processors/DailyArtifactPolicy.h
 		processors/PlayerMessageProcessor.h
 		processors/TurnOrderProcessor.h
 

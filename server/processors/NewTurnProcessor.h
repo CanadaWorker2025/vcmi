@@ -48,6 +48,7 @@ public:
 	NewTurnProcessor(CGameHandler * gameHandler);
 
 	void onNewTurn();
+	void grantDailyArtifacts();
 	void onPlayerTurnStarted(PlayerColor color);
 	void onPlayerTurnEnded(PlayerColor color);
 };

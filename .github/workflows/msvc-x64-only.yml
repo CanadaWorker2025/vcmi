@@ -33,7 +33,7 @@ jobs:
           arch: x64
           toolset: '14.29'
 
-      - name: Check object preview regressions
+      - name: Check object preview and daily artifact regressions
         shell: pwsh
         run: |
           python CI/check_object_preview.py
@@ -41,6 +41,12 @@ jobs:
           cl /nologo /EHsc /std:c++17 CI/test_object_preview_layout.cpp /Fe:"$env:RUNNER_TEMP/preview-layout.exe" /Fo:"$env:RUNNER_TEMP/preview-layout.obj"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "$env:RUNNER_TEMP/preview-layout.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python CI/check_daily_artifacts.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cl /nologo /EHsc /std:c++17 CI/test_daily_artifact_policy.cpp /Fe:"$env:RUNNER_TEMP/daily-artifact-policy.exe" /Fo:"$env:RUNNER_TEMP/daily-artifact-policy.obj"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:RUNNER_TEMP/daily-artifact-policy.exe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Setup compiler cache

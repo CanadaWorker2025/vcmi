@@ -781,6 +781,7 @@ void CGameHandler::onNewTurn()
 		if (elem)
 			elem->newTurn(*this, *randomizer);
 	}
+	newTurnProcessor->grantDailyArtifacts();
 }
 
 void CGameHandler::start(bool resume)

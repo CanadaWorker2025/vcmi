@@ -9,17 +9,21 @@
  */
 #include "StdInc.h"
 #include "NewTurnProcessor.h"
+#include "DailyArtifactPolicy.h"
 
 #include "HeroPoolProcessor.h"
 
 #include "../CGameHandler.h"
 
 #include "../../lib/CPlayerState.h"
+#include "../../lib/CBonusTypeHandler.h"
 #include "../../lib/IGameSettings.h"
 #include "../../lib/StartInfo.h"
 #include "../../lib/callback/GameRandomizer.h"
 #include "../../lib/constants/StringConstants.h"
 #include "../../lib/entities/building/CBuilding.h"
+#include "../../lib/entities/artifact/CArtHandler.h"
+#include "../../lib/entities/artifact/ArtifactUtils.h"
 #include "../../lib/entities/faction/CTownHandler.h"
 #include "../../lib/entities/ResourceTypeHandler.h"
 #include "../../lib/gameState/CGameState.h"
@@ -32,6 +36,7 @@
 #include "../../lib/networkPacks/PacksForClient.h"
 #include "../../lib/networkPacks/StackLocation.h"
 #include "../../lib/pathfinder/TurnInfo.h"
+#include "../../lib/spells/CSpellHandler.h"
 #include "../../lib/texts/CGeneralTextHandler.h"
 
 #include <vstd/RNG.h>
@@ -39,6 +44,82 @@
 NewTurnProcessor::NewTurnProcessor(CGameHandler * gameHandler)
 	:gameHandler(gameHandler)
 {
+}
+
+void NewTurnProcessor::grantDailyArtifacts()
+{
+	const int day = gameHandler->gameInfo().getDate(Date::DAY);
+	if(day <= 1)
+		return;
+
+	// Resolve mod-defined types by name instead of changing serialized built-in bonus IDs.
+	std::vector<BonusType> types;
+	for(const auto type : LIBRARY->bth->getAllObjets())
+		if(LIBRARY->bth->bonusToString(type) == DailyArtifactPolicy::bonusName)
+			types.push_back(type);
+	if(types.empty())
+		return;
+
+	// Snapshot entitlements before awarding: an artifact cannot increase today's grant count.
+	std::vector<std::pair<ObjectInstanceID, int>> recipients;
+	for(const auto & player : gameHandler->gameState().players)
+	{
+		if(gameHandler->gameInfo().getPlayerStatus(player.first) != EPlayerStatus::INGAME)
+			continue;
+		for(const auto * hero : player.second.getHeroes())
+		{
+			if(hero->ID != Obj::HERO || hero->getOwner() != player.first)
+				continue;
+			int count = 0;
+			for(const auto type : types)
+				count = std::min(DailyArtifactPolicy::maxPerHero, count + std::clamp(
+					hero->valOfBonuses(type), 0, DailyArtifactPolicy::maxPerHero));
+			if(count > 0)
+				recipients.emplace_back(hero->id, count);
+		}
+	}
+	if(recipients.empty())
+		return;
+	std::sort(recipients.begin(), recipients.end(), [](const auto & left, const auto & right)
+	{
+		return left.first.getNum() < right.first.getNum();
+	});
+
+	// Scrolls need a real hero spell; do not create an instance with SpellID::NONE.
+	std::vector<SpellID> scrollSpells;
+	for(const auto & spell : LIBRARY->spellh->objects)
+		if(spell && !spell->isSpecial() && !spell->isCreatureAbility() && spell->getLevel() >= 1 && spell->getLevel() <= 5)
+			scrollSpells.push_back(spell->getId());
+
+	// Intentionally ignore map bans and allow combination artifacts. Exclude SPECIAL
+	// scenario items except for ordinary spell scrolls, which are initialized below.
+	std::set<ArtifactID> pool;
+	for(const auto & artifact : LIBRARY->arth->objects)
+		if(artifact && DailyArtifactPolicy::eligible(artifact->aClass == EArtifactClass::ART_SPECIAL,
+			artifact->getWarMachine().hasValue(), artifact->isScroll(), !scrollSpells.empty()))
+			pool.insert(artifact->getId());
+	if(pool.empty())
+		return; // rollArtifact(empty) returns Grail; never use that fallback here.
+
+	for(const auto & recipient : recipients)
+	{
+		const auto * hero = gameHandler->gameState().getHero(recipient.first);
+		if(!hero)
+			continue;
+		DailyArtifactPolicy::grant(day, recipient.second,
+			[hero]() { return ArtifactUtils::isBackpackFreeSlots(hero); },
+			[&]()
+			{
+				const auto artifact = gameHandler->randomizer->rollArtifact(pool);
+				const auto position = ArtifactUtils::getArtBackpackPosition(hero, artifact);
+				if(!ArtifactUtils::isSlotBackpack(position))
+					return false;
+				if(artifact == ArtifactID::SPELL_SCROLL)
+					return gameHandler->giveHeroNewScroll(hero,
+						*RandomGeneratorUtil::nextItem(scrollSpells, gameHandler->getRandomGenerator()), position);
+				return gameHandler->giveHeroNewArtifact(hero, artifact, position);
+			});
+	}
 }
 
 void NewTurnProcessor::handleTimeEvents(PlayerColor color)
