@@ -15,6 +15,7 @@ set(test_SRCS
  		CMemoryBufferTest.cpp
  		CVcmiTestConfig.cpp
  		JsonComparer.cpp
+		TextOperationsTest.cpp
 
  		battle/BattleHexTest.cpp
  		battle/CBattleInfoCallbackTest.cpp
