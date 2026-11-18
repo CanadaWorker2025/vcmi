@@ -1,0 +1,139 @@
+name: Build iOS Unsigned IPA Only
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/magic-fader-battle-ai-1.7.4
+    paths:
+      - .github/workflows/ios-unsigned-only.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-ios:
+    name: Build unsigned iOS ARM64 IPA
+    runs-on: macos-15
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    env:
+      PRESET: ios-release-conan-ccache
+      BUILD_DIR: ${{ github.workspace }}/out/build/ios-release-conan-ccache
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+
+    steps:
+      - name: Checkout modified engine
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Check Apple toolchain
+        run: |
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          cmake --version
+          python3 --version
+
+      - name: Install prebuilt iOS dependencies
+        run: |
+          pipx install conan
+          source CI/install_conan_dependencies.sh dependencies-ios
+
+      - name: Restore compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ios-unsigned-${{ github.ref_name }}
+          max-size: '2G'
+
+      - name: Install Conan profile
+        run: |
+          conan profile detect
+          conan install . \
+            --output-folder=conan-generated \
+            --build=never \
+            --profile=dependencies/conan_profiles/ios-arm64 \
+            --profile=dependencies/conan_profiles/base/apple-system \
+            --conf="tools.cmake.cmaketoolchain:generator=Ninja"
+
+      - name: Set package identity
+        run: |
+          source CI/get_package_name.sh
+          echo "VCMI_PACKAGE_FILE_NAME=$VCMI_PACKAGE_FILE_NAME" >> "$GITHUB_ENV"
+          echo "VCMI_PACKAGE_BUILD=$VCMI_PACKAGE_BUILD" >> "$GITHUB_ENV"
+          echo "VCMI_PACKAGE_NAME_SUFFIX=$VCMI_PACKAGE_NAME_SUFFIX" >> "$GITHUB_ENV"
+          echo "VCMI_PACKAGE_GOLDMASTER=$VCMI_PACKAGE_GOLDMASTER" >> "$GITHUB_ENV"
+
+      - name: Configure unsigned iPhone build
+        run: |
+          cmake --preset "$PRESET" -B "$BUILD_DIR" \
+            -DBUNDLE_IDENTIFIER_PREFIX=com.canadaworker2025.lsf \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=
+
+      - name: Build without signing
+        run: |
+          cmake --build --preset "$PRESET" -- \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED_FOR_APPS=NO 'CODE_SIGN_IDENTITY='
+
+      - name: Package IPA
+        working-directory: ${{ env.BUILD_DIR }}
+        run: cpack -C RelWithDebInfo
+
+      - name: Verify IPA structure and record checksum
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import zipfile
+
+          root = pathlib.Path(os.environ["BUILD_DIR"])
+          packages = list(root.glob("*.ipa"))
+          if len(packages) != 1:
+              raise SystemExit(f"Expected exactly one IPA, found {packages}")
+          ipa = packages[0]
+          with zipfile.ZipFile(ipa) as archive:
+              names = archive.namelist()
+              if not any(n.startswith("Payload/") and n.endswith(".app/Info.plist") for n in names):
+                  raise SystemExit("Missing Payload/*.app/Info.plist")
+              if any("/_CodeSignature/" in n or n.endswith("/embedded.mobileprovision") for n in names):
+                  raise SystemExit("Unexpected signing assets in unsigned IPA")
+          checksum = hashlib.file_digest(ipa.open("rb"), "sha256").hexdigest()
+          ipa.with_suffix(".ipa.sha256").write_text(f"{checksum}  {ipa.name}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"## Unsigned iOS IPA\n\nCommit: {os.environ['GITHUB_SHA']}\n\n")
+              summary.write(f"Package: {ipa.name}\n\nSHA-256: {checksum}\n\n")
+              summary.write("Requires signing/sideloading before installation. Game data and mods are not included.\n")
+          PY
+
+      - name: Upload unsigned IPA and checksum
+        uses: actions/upload-artifact@v6
+        with:
+          name: vcmi-ios-arm64-unsigned-${{ github.sha }}
+          path: |
+            ${{ env.BUILD_DIR }}/*.ipa
+            ${{ env.BUILD_DIR }}/*.ipa.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload CMake diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-build-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ env.BUILD_DIR }}/CMakeCache.txt
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ env.BUILD_DIR }}/_CPack_Packages/**/PreinstallOutput.log
+          if-no-files-found: ignore
+          retention-days: 7
