@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-ios:
@@ -80,7 +80,7 @@ jobs:
 
       - name: Build without signing
         run: |
-          cmake --build --preset "$PRESET" -- \
+          cmake --build "$BUILD_DIR" --config RelWithDebInfo --target vcmiclient -- \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED_FOR_APPS=NO 'CODE_SIGN_IDENTITY='
 
